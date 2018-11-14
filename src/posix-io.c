@@ -145,6 +145,7 @@ _gpgme_io_pipe (int filedes[2], int inherit_idx)
 {
   int saved_errno;
   int err;
+  int oldflags;
   TRACE_BEG2 (DEBUG_SYSIO, "_gpgme_io_pipe", filedes,
 	      "inherit_idx=%i (GPGME uses it for %s)",
 	      inherit_idx, inherit_idx ? "reading" : "writing");
@@ -153,8 +154,8 @@ _gpgme_io_pipe (int filedes[2], int inherit_idx)
   if (err < 0)
     return TRACE_SYSRES (err);
 
-  /* FIXME: Should get the old flags first.  */
-  err = fcntl (filedes[1 - inherit_idx], F_SETFD, FD_CLOEXEC);
+  oldflags = fcntl (filedes[1 - inherit_idx], F_GETFD, 0);
+  err = fcntl (filedes[1 - inherit_idx], F_SETFD, oldflags | FD_CLOEXEC);
   saved_errno = errno;
   if (err < 0)
     {
@@ -579,6 +580,8 @@ _gpgme_io_spawn (const char *path, char *const argv[], unsigned int flags,
 	  if (! seen_stdin || ! seen_stdout || !seen_stderr)
 	    {
 	      fd = open ("/dev/null", O_RDWR);
+	      int oldflags = fcntl (fd, F_GETFD, 0);
+	      fcntl (fd, F_SETFD, oldflags | FD_CLOEXEC);
 	      if (fd == -1)
 		{
 		  /* The debug file descriptor is not dup'ed, so we
