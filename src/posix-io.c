@@ -60,7 +60,9 @@
 #include "ath.h"
 #include "debug.h"
 
-
+#define POLLFD_MAX 65536
+
+
 void
 _gpgme_io_subsystem_init (void)
 {
@@ -385,9 +387,11 @@ _gpgme_io_spawn (const char *path, char *const argv[], unsigned int flags,
 {
   pid_t pid;
   int i;
+  int start;
   int status;
   int signo;
   int oldflags;
+  struct pollfd pfd[POLLFD_MAX];
 
   TRACE_BEG1 (DEBUG_SYSIO, "_gpgme_io_spawn", path,
 	      "path=%s", path);
@@ -424,26 +428,39 @@ _gpgme_io_spawn (const char *path, char *const argv[], unsigned int flags,
 	    atfork (atforkvalue, 0);
 
           /* First close all fds which will not be inherited. */
-	  struct pollfd *pfd = malloc(max_fds * sizeof(struct pollfd));
-          for (fd = 0; fd < max_fds; fd++)
+	  for (start = 0; start < max_fds; start += POLLFD_MAX)
 	    {
-	      pfd[fd].fd = fd;
-	      pfd[fd].events = 0;
-	    }
-	  poll(pfd, max_fds, 0);
-
-          for (fd = 0; fd < max_fds; fd++)
-            {
-              for (i = 0; fd_list[i].fd != -1; i++)
-                if (fd_list[i].fd == fd)
-                  break;
-              if (fd_list[i].fd == -1)
+	      int nonzero;
+	      for (fd = start; fd < start + POLLFD_MAX; fd++)
 		{
-		  if (pfd[i].revents & POLLNVAL)
-		    close (fd);
+		  struct pollfd *p = &pfd[fd - start];
+		  p->fd = (fd < max_fds) ? fd : -1;
+		  p->events = 0;
 		}
-            }
-	  free(pfd);
+	      do
+	        {
+		  nonzero = poll (pfd, POLLFD_MAX, 0);
+		}
+	      while (nonzero <= 0 && (errno == EINTR || errno == EAGAIN));
+	      if (nonzero <= 0)
+		{
+		  TRACE_LOG1 ("poll failed in child: %s\n",
+			      strerror (errno));
+		  _exit(8);
+		}
+
+	      for (fd = start; fd < start + POLLFD_MAX && fd < max_fds; fd++)
+		{
+		  for (i = 0; fd_list[i].fd != -1; i++)
+		    if (fd_list[i].fd == fd)
+		      break;
+		  if (fd_list[i].fd == -1)
+		    {
+		      if (! pfd[fd - start].revents & POLLNVAL)
+			close (fd);
+		    }
+		}
+	    }
 
 	  /* And now dup and close those to be duplicated.  */
 	  for (i = 0; fd_list[i].fd != -1; i++)
