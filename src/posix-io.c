@@ -439,7 +439,7 @@ _gpgme_io_spawn (const char *path, char *const argv[], unsigned int flags,
 		}
 	      do
 	        {
-		  nonzero = poll (pfd, POLLFD_MAX, 0);
+		  nonzero = poll (pfd, max_fds < POLLFD_MAX ? max_fds : POLLFD_MAX, 0);
 		}
 	      while (nonzero <= 0 && (errno == EINTR || errno == EAGAIN));
 	      if (nonzero <= 0)
